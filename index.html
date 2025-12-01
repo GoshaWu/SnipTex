@@ -1,0 +1,473 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SnipTex - AI 公式识别与转换</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        MathJax = {
+          tex: {
+            inlineMath: [['$', '$'], ['\\(', '\\)']]
+          },
+          svg: {
+            fontCache: 'global'
+          }
+        };
+    </script>
+    <script type="text/javascript" id="MathJax-script" async
+      src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js">
+    </script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+        body {
+            font-family: 'Inter', 'Helvetica Neue', 'Arial', 'sans-serif';
+        }
+        .paste-box {
+            border: 3px dashed #9ca3af;
+            transition: border-color 0.3s, background-color 0.3s;
+        }
+        .paste-box.highlight {
+            border-color: #3b82f6;
+            background-color: #eff6ff;
+        }
+        .loader {
+            border: 4px solid #f3f4f6;
+            border-top: 4px solid #3b82f6;
+            border-radius: 50%;
+            width: 24px;
+            height: 24px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        code {
+            background-color: #e5e7eb;
+            padding: 0.1rem 0.3rem;
+            border-radius: 0.25rem;
+            font-family: monospace;
+        }
+        .api-key-input:focus {
+            border-color: #3b82f6;
+            box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.4);
+        }
+    </style>
+</head>
+<body class="bg-gray-100 text-gray-800 flex items-center justify-center min-h-screen p-4">
+
+    <div class="w-full max-w-6xl bg-white rounded-xl shadow-lg p-6 md:p-8">
+        
+        <header class="text-center mb-8">
+            <h1 class="text-4xl font-bold text-gray-900 tracking-tight">SnipTex</h1>
+            <p class="text-gray-600 mt-3 max-w-2xl mx-auto leading-relaxed">
+                SnipTex 是一款专为科研人员与学术写作者打造的高效辅助工具。只需一键截图，即可利用先进的 AI 视觉技术精准识别数学公式，并即时将其转换为标准的 Overleaf (LaTeX) 代码。告别繁琐的手动录入，SnipTex 让您的学术创作流程如丝般顺滑。
+            </p>
+        </header>
+
+        <!-- API Key Input Section -->
+        <div class="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+            <label for="api-key-input" class="block font-semibold text-gray-800 mb-2">Google AI API 密钥</label>
+            <div class="flex items-center gap-2">
+                <input type="password" id="api-key-input" class="api-key-input w-full p-2 border border-gray-300 rounded-md transition focus:outline-none" placeholder="请在此处粘贴您的 API 密钥">
+                <a href="https://aistudio.google.com/app/apikey" target="_blank" class="text-sm text-blue-600 hover:underline whitespace-nowrap">获取密钥</a>
+            </div>
+            <p class="text-xs text-gray-500 mt-2">密钥将仅保存在您的浏览器本地存储中，保障隐私安全。</p>
+        </div>
+
+
+        <main class="flex flex-col gap-6 md:gap-8">
+            <div class="grid md:grid-cols-2 gap-6 md:gap-8">
+                <!-- Left Side: Image Input -->
+                <div class="flex flex-col">
+                    <label class="font-semibold text-gray-700 mb-2">1. 粘贴您的截图</label>
+                    <div id="paste-container" class="paste-box w-full h-80 md:h-full flex-grow flex flex-col items-center justify-center bg-gray-50 rounded-lg p-4 text-center cursor-pointer">
+                        <div id="instructions">
+                            <svg class="mx-auto h-12 w-12 text-gray-400" stroke="currentColor" fill="none" viewBox="0 0 48 48" aria-hidden="true">
+                                <path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path>
+                            </svg>
+                            <p class="mt-4 text-gray-500">将截图粘贴到此处 (Ctrl+V)</p>
+                            <p class="text-xs text-gray-400 mt-1">或点击选择文件</p>
+                        </div>
+                        <img id="image-preview" src="" alt="截图预览" class="hidden max-w-full max-h-full object-contain rounded-md"/>
+                        <input type="file" id="file-input" class="hidden" accept="image/*">
+                    </div>
+                    <button id="recognize-btn" class="mt-4 w-full bg-blue-600 text-white font-semibold py-3 px-4 rounded-lg shadow-md hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center justify-center transition-colors" disabled>
+                        <span id="btn-text">开始识别</span>
+                        <div id="loader" class="loader hidden ml-3"></div>
+                    </button>
+                    <!-- This div balances the height of the status div on the right -->
+                    <div class="h-5 mt-2"></div>
+                </div>
+
+                <!-- Middle: LaTeX Output -->
+                <div class="flex flex-col">
+                    <label for="output" class="font-semibold text-gray-700 mb-2">2. 粘贴或编辑 LaTeX</label>
+                    <div class="relative w-full flex-grow h-80">
+                        <textarea id="output" class="absolute inset-0 w-full h-full resize-none p-4 border border-gray-300 rounded-lg bg-gray-50 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition" placeholder="识别结果将显示在这里，您也可以直接编辑..."></textarea>
+                        <button id="copy-btn" class="absolute top-3 right-3 bg-gray-200 text-gray-700 font-medium py-1 px-3 rounded-md hover:bg-gray-300 transition-colors text-sm">复制</button>
+                    </div>
+                    <button id="render-btn" class="mt-4 w-full bg-green-600 text-white font-semibold py-3 px-4 rounded-lg shadow-sm hover:bg-green-700 flex items-center justify-center transition-colors">
+                        <span>手动生成预览</span>
+                    </button>
+                    <div id="status" class="mt-2 text-sm text-center text-gray-500 h-5"></div>
+                </div>
+            </div>
+            
+            <!-- Moved Package Suggestions to its own row -->
+            <div>
+                 <div id="package-suggestions" class="text-xs text-left text-gray-600 bg-gray-100 p-3 rounded-md hidden"></div>
+            </div>
+
+            <!-- Bottom Row: Formula Preview -->
+            <div class="flex flex-col">
+                <label class="font-semibold text-gray-700 mb-2">3. 公式效果预览</label>
+                <div id="preview-output" class="w-full h-64 md:h-80 flex items-center justify-center p-4 border border-gray-300 rounded-lg bg-gray-50 overflow-auto">
+                    <span class="text-gray-400">预览将显示在这里...</span>
+                </div>
+            </div>
+        </main>
+
+    </div>
+
+    <script>
+        // DOM Elements
+        const pasteContainer = document.getElementById('paste-container');
+        const instructions = document.getElementById('instructions');
+        const imagePreview = document.getElementById('image-preview');
+        const fileInput = document.getElementById('file-input');
+        const recognizeBtn = document.getElementById('recognize-btn');
+        const btnText = document.getElementById('btn-text');
+        const loader = document.getElementById('loader');
+        const outputTextarea = document.getElementById('output');
+        const copyBtn = document.getElementById('copy-btn');
+        const renderBtn = document.getElementById('render-btn');
+        const statusDiv = document.getElementById('status');
+        const packageSuggestions = document.getElementById('package-suggestions');
+        const previewOutput = document.getElementById('preview-output');
+        const apiKeyInput = document.getElementById('api-key-input');
+        
+        let imageBase64Data = null;
+
+        // --- Event Listeners ---
+        
+        window.addEventListener('load', () => {
+            const savedKey = localStorage.getItem('geminiApiKey');
+            if (savedKey) {
+                apiKeyInput.value = savedKey;
+                updateStatus('已加载已保存的 API 密钥。', 'success');
+            }
+        });
+
+        // Handle pasting image
+        document.addEventListener('paste', handlePaste);
+
+        // Handle drag and drop highlighting
+        pasteContainer.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            pasteContainer.classList.add('highlight');
+        });
+        pasteContainer.addEventListener('dragleave', () => {
+            pasteContainer.classList.remove('highlight');
+        });
+        pasteContainer.addEventListener('drop', (e) => {
+            e.preventDefault();
+            pasteContainer.classList.remove('highlight');
+            const files = e.dataTransfer.files;
+            if (files.length > 0 && files[0].type.startsWith('image/')) {
+                handleFile(files[0]);
+            }
+        });
+
+        // Handle file input click
+        pasteContainer.addEventListener('click', () => fileInput.click());
+        fileInput.addEventListener('change', (e) => {
+            if (e.target.files.length > 0) {
+                handleFile(e.target.files[0]);
+            }
+        });
+        
+        // Recognize button click
+        recognizeBtn.addEventListener('click', () => {
+            if (imageBase64Data) {
+                callGeminiAPI(imageBase64Data);
+            }
+        });
+
+        // Copy button click
+        copyBtn.addEventListener('click', copyToClipboard);
+
+        // Render button click
+        renderBtn.addEventListener('click', renderCustomLatex);
+
+        // --- Functions ---
+        
+        function handlePaste(event) {
+            // Do not handle paste if the user is typing in an input/textarea
+            if (document.activeElement === outputTextarea || document.activeElement === apiKeyInput) {
+                return;
+            }
+            event.preventDefault(); // Prevent the browser's default paste action.
+            const items = (event.clipboardData || window.clipboardData).items;
+            let imageFound = false;
+            if (items) {
+                for (let i = 0; i < items.length; i++) {
+                    if (items[i].type.indexOf('image') !== -1) {
+                        const file = items[i].getAsFile();
+                        if (file) {
+                            handleFile(file);
+                            imageFound = true;
+                            break;
+                        }
+                    }
+                }
+            }
+            if (!imageFound) {
+                updateStatus('未能在剪贴板中找到图片。', 'error');
+            }
+        }
+
+        function handleFile(file) {
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                const base64 = e.target.result;
+                imageBase64Data = base64.split(',')[1]; // Remove data URL prefix
+                imagePreview.src = base64;
+                imagePreview.classList.remove('hidden');
+                instructions.classList.add('hidden');
+                recognizeBtn.disabled = false;
+                outputTextarea.value = '';
+                packageSuggestions.innerHTML = '';
+                packageSuggestions.classList.add('hidden');
+                previewOutput.innerHTML = '<span class="text-gray-400">预览将显示在这里...</span>';
+                updateStatus('图片已准备就绪。', 'success');
+            };
+            reader.readAsDataURL(file);
+        }
+
+        function setUIState(isLoading) {
+            recognizeBtn.disabled = isLoading;
+            if (isLoading) {
+                btnText.textContent = '识别中...';
+                loader.classList.remove('hidden');
+            } else {
+                btnText.textContent = '开始识别';
+                loader.classList.add('hidden');
+            }
+        }
+
+        function updateStatus(message, type = 'info') {
+            statusDiv.textContent = message;
+            if (type === 'error') {
+                statusDiv.classList.add('text-red-500');
+                statusDiv.classList.remove('text-green-500', 'text-gray-500');
+            } else if (type === 'success') {
+                statusDiv.classList.add('text-green-500');
+                statusDiv.classList.remove('text-red-500', 'text-gray-500');
+            } else {
+                statusDiv.classList.add('text-gray-500');
+                statusDiv.classList.remove('text-red-500', 'text-green-500');
+            }
+        }
+
+        function renderCustomLatex() {
+            const latexCode = outputTextarea.value;
+            if (!latexCode.trim()) {
+                previewOutput.innerHTML = '<span class="text-gray-400">请输入 LaTeX 代码以生成预览。</span>';
+                packageSuggestions.classList.add('hidden');
+                return;
+            }
+
+            // Extract content from equation environment if present
+            let coreLatex = latexCode.replace(/\\begin{equation}|\\end{equation}/g, '').trim();
+
+            // Update and render preview
+            previewOutput.innerHTML = `$$${coreLatex}$$`;
+            if (window.MathJax) {
+                MathJax.typesetPromise([previewOutput]).catch((err) => {
+                    console.error('MathJax rendering error:', err);
+                    previewOutput.innerHTML = `<span class="text-red-500 text-xs">公式渲染失败: ${err.message}</span>`;
+                });
+            }
+
+            // Analyze and suggest packages
+            analyzeAndSuggestPackages(coreLatex);
+        }
+
+        async function callGeminiAPI(base64ImageData) {
+            const apiKey = apiKeyInput.value.trim();
+            if (!apiKey) {
+                updateStatus('错误：请先在上方输入您的 Google AI API 密钥。', 'error');
+                apiKeyInput.focus();
+                apiKeyInput.classList.add('border-red-500');
+                setTimeout(() => apiKeyInput.classList.remove('border-red-500'), 2000);
+                return;
+            }
+            
+            setUIState(true);
+            updateStatus('正在调用 AI 模型进行识别...', 'info');
+            outputTextarea.value = '';
+            packageSuggestions.innerHTML = '';
+            packageSuggestions.classList.add('hidden');
+            previewOutput.innerHTML = '<span class="text-gray-400">正在生成预览...</span>';
+
+            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${apiKey}`;
+            
+            const systemPrompt = "You are an expert at recognizing mathematical formulas in images. Your task is to extract only the formula and return it as a single line of LaTeX code. Do not include any surrounding text, explanations, or LaTeX delimiters like `$` or `$$`.";
+
+            const payload = {
+                systemInstruction: {
+                    parts: [{ text: systemPrompt }]
+                },
+                contents: [
+                    {
+                        role: "user",
+                        parts: [
+                            { text: "Extract the LaTeX formula from this image." },
+                            {
+                                inlineData: {
+                                    mimeType: "image/png",
+                                    data: base64ImageData
+                                }
+                            }
+                        ]
+                    }
+                ],
+            };
+
+            let retries = 3;
+            let delay = 1000;
+            let response = null;
+
+            while (retries > 0) {
+                try {
+                    response = await fetch(apiUrl, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+
+                    if (response.ok) {
+                        localStorage.setItem('geminiApiKey', apiKey); // Save key on success
+                        break; // Success
+                    } else if (response.status === 429 || response.status >= 500) {
+                        // Throttling or server error, wait and retry
+                        console.warn(`API call failed with status ${response.status}. Retrying in ${delay}ms...`);
+                        await new Promise(resolve => setTimeout(resolve, delay));
+                        delay *= 2; // Exponential backoff
+                        retries--;
+                    } else {
+                        // Other client-side error, don't retry
+                        const errorData = await response.json();
+                        throw new Error(errorData.error.message || `HTTP error! status: ${response.status}`);
+                    }
+                } catch (error) {
+                    console.error('Fetch error:', error);
+                    updateStatus(`网络请求失败: ${error.message}`, 'error');
+                    setUIState(false);
+                    return;
+                }
+            }
+            
+            if (!response || !response.ok) {
+                updateStatus('AI 模型请求失败，请稍后重试。', 'error');
+                setUIState(false);
+                return;
+            }
+
+            let result; // Define result here to be accessible in catch block
+            try {
+                result = await response.json();
+                const candidate = result.candidates?.[0];
+                let extractedText = candidate?.content?.parts?.[0]?.text;
+
+                if (extractedText) {
+                    // Clean up potential markdown code blocks
+                    extractedText = extractedText.replace(/```latex|```/g, '').trim();
+                    const formattedLatex = `\\begin{equation}\n    ${extractedText}\n\\end{equation}`;
+                    outputTextarea.value = formattedLatex;
+                    
+                    // Automatically render the result
+                    renderCustomLatex();
+
+                    updateStatus('识别成功！', 'success');
+                } else {
+                     throw new Error('未找到有效的公式文本。');
+                }
+            } catch (error) {
+                console.error('Error processing API response:', error, result);
+                updateStatus(`处理AI响应时出错: ${error.message}`, 'error');
+                if(result) {
+                    outputTextarea.value = `// 错误：\n// ${JSON.stringify(result, null, 2)}`;
+                }
+                previewOutput.innerHTML = '<span class="text-red-500">无法生成预览</span>';
+            } finally {
+                setUIState(false);
+            }
+        }
+
+        function analyzeAndSuggestPackages(latexCode) {
+            const packageMap = {
+                'amsmath': ['\\text', '\\begin{pmatrix}', '\\begin{bmatrix}', '\\begin{cases}', '\\substack', '\\eqref', '\\align', '\\gather', '\\multline'],
+                'amssymb': ['\\mathbb', '\\mathfrak', '\\blacksquare', '\\checkmark', '\\therefore', '\\because'],
+                'bm': ['\\bm'],
+                'mathtools': ['\\coloneqq', '\\DeclarePairedDelimiter']
+            };
+
+            let requiredPackages = new Set();
+
+            for (const pkg in packageMap) {
+                for (const command of packageMap[pkg]) {
+                    // Use a regex to avoid matching parts of longer command names
+                    if (new RegExp(`\\\\${command.replace(/\\/g, '')}(?![a-zA-Z])`).test(latexCode)) {
+                        requiredPackages.add(pkg);
+                        break; 
+                    }
+                }
+            }
+            
+            // If no specific packages are detected, suggest a default set.
+            if (requiredPackages.size === 0 && latexCode.trim()) {
+                requiredPackages.add('amsmath');
+                requiredPackages.add('amssymb');
+            }
+
+            if (requiredPackages.size > 0) {
+                const packageList = Array.from(requiredPackages).map(pkg => `<code>\\usepackage{${pkg}}</code>`).join('<br>');
+                packageSuggestions.innerHTML = `为确保公式正确渲染，建议包含以下包：<br>${packageList}`;
+                packageSuggestions.classList.remove('hidden');
+            }
+        }
+
+        function copyToClipboard() {
+            if (!outputTextarea.value) {
+                updateStatus('没有内容可以复制。', 'info');
+                return;
+            }
+
+            outputTextarea.focus();
+            outputTextarea.select();
+
+            try {
+                const successful = document.execCommand('copy');
+                if (successful) {
+                    copyBtn.textContent = '已复制!';
+                    updateStatus('已成功复制到剪贴板！', 'success');
+                } else {
+                    throw new Error('document.execCommand failed');
+                }
+            } catch (err) {
+                console.error('Fallback: Oops, unable to copy', err);
+                updateStatus('您的浏览器不支持或阻止了复制操作。', 'error');
+                copyBtn.textContent = '复制失败';
+            }
+
+            setTimeout(() => {
+                copyBtn.textContent = '复制';
+            }, 2500);
+        }
+    </script>
+</body>
+</html>
